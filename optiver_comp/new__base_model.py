@@ -24,7 +24,7 @@ def delete_orders(e, instrument):
         if len(history) != 0:
             price = history[0].price
             for price_mod, side in [(0, "ask"), (0, "bid")]:
-                exchange.insert_order(instrument_name, price = price + price_mod, volume = abs(pos[instrument_name]), side = side)
+                e.insert_order(instrument_name, price = price + price_mod, volume = abs(pos[instrument_name]), side = side)
 
 # Extract information from the order book
 def extract_orderbook(e, instrument):
@@ -57,33 +57,40 @@ def attempt_trade(e, etf, stock_1, stock_2):
         etf_cap, etf_cav, etf_cbp, etf_cbv = etf_data
     else: return
     
-    # if the volume of the trade is 1 we return as our algorithm does not deal with them
+    # ETF lot should be at least 2 to build a mirror etf from the individual stocks
     if etf_cbv == 1: return
     
-    # here we get our expected etf bid and ask price
+    # Expected bid and ask price for mirror etf
     #(e)tf (p)lanned (b)id (p)rice
     etf_pbp = 0.5 * stock_1_cbp + 0.5 * stock_2_cbp 
     etf_pap = 0.5 * stock_1_cap + 0.5 * stock_2_cap
-    # here we calculate the spread
-    spread = etf_pap - etf_pbp
     
-    # we get the positions of our account
+    # Calculate spread of mirror etf
+    # spread = etf_pap - etf_pbp
+    
+    # Get auto trader open positions
     pos = e.get_positions()
     
-    # the positions exist we get the position for each instrument
+    # Get open position for relevant stocks and etf
     if pos: etf_pos, stock_1_pos, stock_2_pos = pos[etf], pos[stock_1], pos[stock_2]
     else: etf_pos, stock_1_pos, stock_2_pos = 0, 0, 0
     
-    # we calculate the volume of the trades we will make, we save the first volume calculation for later
+    # Calculate the most available volume we can possibly trade
     first_vol = min(2 * min(stock_1_cav , stock_2_cav), etf_cbv)
+    
+    # Maximum volume traded is limited to +-500
     vol = min(500 - abs(etf_pos), first_vol)
         
-    # 1st case: The ETF has a higher bid price than the individual stock ask price
+    # 1st case: The ETF has a higher bid price than the mirror etf ask price
     if etf_cbp > etf_pap:
         # check if we have reached holding capactity and calculating final volume
         if vol == 0 and etf_pos == -500:  return
         elif vol == 0 and etf_pos == 500: vol = min(first_vol, 500)
         vol //= 2
+        
+        # Ensure no trade execution if volume is 0
+        if vol == 0:
+            return
         
         # long and shorting our instruments
         if VERBOSE: print(f'buying stocks at {stock_1_cap} and {stock_2_cap} V {vol} and selling etf at {etf_cbp} V {2*vol}')
@@ -101,6 +108,10 @@ def attempt_trade(e, etf, stock_1, stock_2):
         if vol == 0 and etf_pos == 500:  return
         elif vol == 0 and etf_pos == -500: vol = min(first_vol, 500)
         vol //= 2
+        
+        # if the volume after division is 0, we return (this is because the minimum volume must have been 1)
+        if vol == 0:
+            return
         
         # long and shorting our instruments
         if VERBOSE: print(f'buying etf at {etf_cap} v {2*vol} and selling stocks at {stock_1_cbp} and {stock_2_cbp} v {vol}')
